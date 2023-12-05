@@ -6,6 +6,8 @@ use std::{
     ops::{Bound, Range},
 };
 
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
 fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -48,8 +50,8 @@ struct Almanac {
 }
 
 impl Almanac {
-    fn seeds(&self) -> impl Iterator<Item = u32> + '_ {
-        self.seeds.iter().cloned().flatten()
+    fn seeds(&self) -> impl ParallelIterator<Item = u32> + '_ {
+        self.seeds.par_iter().cloned().flatten()
     }
 
     fn seed_location(&self, seed: u32) -> u32 {
