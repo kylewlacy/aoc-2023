@@ -1,4 +1,6 @@
-use std::{collections::BTreeMap, io::Read};
+#![feature(btree_cursors)]
+
+use std::{collections::BTreeMap, io::Read, ops::Bound};
 
 fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
@@ -158,7 +160,7 @@ fn parse_range_map_section(section: &str, prefix: &str) -> eyre::Result<RangeMap
 
 #[derive(Debug)]
 struct RangeMap {
-    entries: BTreeMap<u32, u32>,
+    entries: BTreeMap<u32, (u32, u32)>,
 }
 
 impl RangeMap {
@@ -169,12 +171,22 @@ impl RangeMap {
     }
 
     fn add_range(&mut self, destination_start: u32, source_start: u32, length: u32) {
-        for i in 0..length {
-            self.entries.insert(source_start + i, destination_start + i);
-        }
+        self.entries
+            .insert(source_start, (destination_start, length));
     }
 
     fn get(&self, key: u32) -> u32 {
-        self.entries.get(&key).copied().unwrap_or(key)
+        let cursor = self.entries.upper_bound(Bound::Included(&key));
+        cursor
+            .key_value()
+            .and_then(|(source_start, (dest_start, length))| {
+                let offset = key.checked_sub(*source_start).unwrap();
+                if offset < *length {
+                    Some(dest_start + offset)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(key)
     }
 }
