@@ -176,11 +176,16 @@ fn hand_type(cards: Cards) -> HandType {
         }
     }
 
-    let mut counts: Vec<_> = counts.values().copied().chain([0]).collect();
+    let mut counts: Vec<_> = counts.values().copied().collect();
     counts.sort_by(|a, b| a.cmp(b).reverse());
 
-    for _ in 0..jokers {
-        counts[0] += 1;
+    // Add the number of jokers to the highest card count (or insert the number
+    // of jokers if there are no non-jokers). This "upgrades" the best hand
+    // so far based on the number of jokers.
+    if counts.is_empty() {
+        counts.push(jokers);
+    } else {
+        counts[0] += jokers;
     }
 
     let hand_type = match &counts[..] {
