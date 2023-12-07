@@ -60,24 +60,6 @@ enum Card {
     Ace,
 }
 
-impl Card {
-    const ALL: [Card; 13] = [
-        Card::Joker,
-        Card::Two,
-        Card::Three,
-        Card::Four,
-        Card::Five,
-        Card::Six,
-        Card::Seven,
-        Card::Eight,
-        Card::Nine,
-        Card::Ten,
-        Card::Queen,
-        Card::King,
-        Card::Ace,
-    ];
-}
-
 impl std::fmt::Display for Card {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -181,13 +163,11 @@ enum HandType {
 
 fn hand_type(cards: Cards) -> HandType {
     let mut counts: HashMap<Card, u8> = HashMap::new();
+    let mut jokers = 0;
     for card in &cards.0 {
         match card {
             Card::Joker => {
-                for card in &Card::ALL {
-                    let count = counts.entry(*card).or_default();
-                    *count += 1;
-                }
+                jokers += 1;
             }
             card => {
                 let count = counts.entry(*card).or_default();
@@ -196,8 +176,13 @@ fn hand_type(cards: Cards) -> HandType {
         }
     }
 
-    let mut counts: Vec<_> = counts.values().copied().collect();
+    let mut counts: Vec<_> = counts.values().copied().chain([0]).collect();
     counts.sort_by(|a, b| a.cmp(b).reverse());
+
+    for _ in 0..jokers {
+        counts[0] += 1;
+    }
+
     let hand_type = match &counts[..] {
         &[5, ..] => HandType::FiveOfAKind,
         &[4, ..] => HandType::FourOfAKind,
