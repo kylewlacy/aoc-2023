@@ -121,58 +121,26 @@ impl TryFrom<char> for Card {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Cards([Card; 5]);
+
+impl std::fmt::Display for Cards {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let [a, b, c, d, e] = &self.0;
+        write!(f, "{a}{b}{c}{d}{e}")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct Hand {
-    cards: [Card; 5],
+    hand_type: HandType,
+    cards: Cards,
 }
 
 impl Hand {
-    fn hand_type(&self) -> HandType {
-        let mut counts: HashMap<Card, u8> = HashMap::new();
-        for card in &self.cards {
-            match card {
-                Card::Joker => {
-                    for card in &Card::ALL {
-                        let count = counts.entry(*card).or_default();
-                        *count += 1;
-                    }
-                }
-                card => {
-                    let count = counts.entry(*card).or_default();
-                    *count += 1;
-                }
-            }
-        }
-
-        let mut counts: Vec<_> = counts.values().copied().collect();
-        counts.sort_by(|a, b| a.cmp(b).reverse());
-        let hand_type = match &counts[..] {
-            &[5, ..] => HandType::FiveOfAKind,
-            &[4, ..] => HandType::FourOfAKind,
-            &[3, 2, ..] => HandType::FullHouse,
-            &[3, ..] => HandType::ThreeOfAKind,
-            &[2, 2, ..] => HandType::TwoPair,
-            &[2, ..] => HandType::OnePair,
-            _ => HandType::HighCard,
-        };
-
-        tracing::debug!(hand = %self, ?hand_type, ?counts, "hand type");
-
-        hand_type
-    }
-}
-
-impl std::cmp::Ord for Hand {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.hand_type()
-            .cmp(&other.hand_type())
-            .then_with(|| self.cards.cmp(&other.cards))
-    }
-}
-
-impl std::cmp::PartialOrd for Hand {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+    fn new(cards: Cards) -> Self {
+        let hand_type = hand_type(cards);
+        Self { hand_type, cards }
     }
 }
 
@@ -190,14 +158,7 @@ impl std::str::FromStr for Hand {
         ];
         eyre::ensure!(chars.next().is_none(), "too many cards in hand");
 
-        Ok(Self { cards })
-    }
-}
-
-impl std::fmt::Display for Hand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let [a, b, c, d, e] = &self.cards;
-        write!(f, "{a}{b}{c}{d}{e}")
+        Ok(Self::new(Cards(cards)))
     }
 }
 
@@ -216,4 +177,38 @@ enum HandType {
     FullHouse,
     FourOfAKind,
     FiveOfAKind,
+}
+
+fn hand_type(cards: Cards) -> HandType {
+    let mut counts: HashMap<Card, u8> = HashMap::new();
+    for card in &cards.0 {
+        match card {
+            Card::Joker => {
+                for card in &Card::ALL {
+                    let count = counts.entry(*card).or_default();
+                    *count += 1;
+                }
+            }
+            card => {
+                let count = counts.entry(*card).or_default();
+                *count += 1;
+            }
+        }
+    }
+
+    let mut counts: Vec<_> = counts.values().copied().collect();
+    counts.sort_by(|a, b| a.cmp(b).reverse());
+    let hand_type = match &counts[..] {
+        &[5, ..] => HandType::FiveOfAKind,
+        &[4, ..] => HandType::FourOfAKind,
+        &[3, 2, ..] => HandType::FullHouse,
+        &[3, ..] => HandType::ThreeOfAKind,
+        &[2, 2, ..] => HandType::TwoPair,
+        &[2, ..] => HandType::OnePair,
+        _ => HandType::HighCard,
+    };
+
+    tracing::debug!(%cards, ?hand_type, ?counts, "hand type");
+
+    hand_type
 }
