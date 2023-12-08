@@ -40,36 +40,15 @@ fn main() -> eyre::Result<()> {
         nodes.insert(node, (left, right));
     }
 
-    let mut ghost_positions = nodes
-        .keys()
-        .copied()
-        .filter(|node| node.ends_with('A'))
-        .collect::<Vec<_>>();
-    let mut steps = 0;
-    for direction in std::iter::repeat(&directions).flatten() {
-        if steps % 10000000 == 0 {
-            tracing::info!("on step {steps}");
-        }
+    let ghost_positions = nodes.keys().copied().filter(|node| node.ends_with('A'));
+    let ghost_steps: Vec<_> = ghost_positions
+        .map(|position| steps_to_exit(&nodes, &directions, position))
+        .collect();
 
-        if ghost_positions.iter().all(|ghost| ghost.ends_with('Z')) {
-            break;
-        }
+    let ghost_steps_lcm =
+        lcmx::lcmx(&ghost_steps).ok_or_else(|| eyre::eyre!("failed to get lcm"))?;
 
-        for position in &mut ghost_positions {
-            let node = nodes
-                .get(position)
-                .ok_or_else(|| eyre::eyre!("node not found: {position:?}"))?;
-
-            match direction {
-                Direction::Left => *position = node.0,
-                Direction::Right => *position = node.1,
-            }
-        }
-
-        steps += 1;
-    }
-
-    println!("{steps}");
+    println!("{ghost_steps_lcm}");
 
     Ok(())
 }
@@ -92,4 +71,32 @@ impl TryFrom<char> for Direction {
             }
         }
     }
+}
+
+fn steps_to_exit(
+    nodes: &HashMap<&str, (&str, &str)>,
+    directions: &[Direction],
+    start: &str,
+) -> u64 {
+    let mut position = start;
+    let mut steps = 0;
+    for direction in std::iter::repeat(directions).flatten() {
+        if position.ends_with('Z') {
+            return steps;
+        }
+
+        let node = nodes
+            .get(position)
+            .ok_or_else(|| eyre::eyre!("node not found: {position:?}"))
+            .unwrap();
+
+        match direction {
+            Direction::Left => position = node.0,
+            Direction::Right => position = node.1,
+        }
+
+        steps += 1;
+    }
+
+    unreachable!("unexpected end of infinite iterator");
 }
