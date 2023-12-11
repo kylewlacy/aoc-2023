@@ -1,4 +1,4 @@
-use std::io::Read as _;
+use std::{collections::HashSet, io::Read as _};
 
 fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
@@ -17,11 +17,26 @@ fn main() -> eyre::Result<()> {
 
     let mut image: GalaxyImage = input.parse()?;
 
-    println!("image:\n{image}");
+    tracing::debug!("image:\n{image}");
 
     image.expand();
 
-    println!("expanded:\n{image}");
+    tracing::debug!("expanded:\n{image}");
+
+    let galaxy_pairs = image
+        .galaxies()
+        .flat_map(|a| {
+            image.galaxies().filter_map(move |b| match a.cmp(&b) {
+                std::cmp::Ordering::Less => Some((a, b)),
+                std::cmp::Ordering::Equal => None,
+                std::cmp::Ordering::Greater => Some((b, a)),
+            })
+        })
+        .collect::<HashSet<_>>();
+
+    let sum: i32 = galaxy_pairs.iter().map(|(a, b)| a.distance_to(b)).sum();
+
+    println!("{sum}");
 
     Ok(())
 }
@@ -48,6 +63,21 @@ impl GalaxyImage {
                 }
             }
         }
+    }
+
+    fn galaxies(&self) -> impl Iterator<Item = Position> + '_ {
+        self.rows.iter().enumerate().flat_map(|(row, cells)| {
+            cells
+                .iter()
+                .enumerate()
+                .filter_map(move |(col, cell)| match cell {
+                    Pixel::Empty => None,
+                    Pixel::Galaxy => Some(Position {
+                        row: row as i32,
+                        col: col as i32,
+                    }),
+                })
+        })
     }
 }
 
@@ -107,5 +137,20 @@ impl std::fmt::Display for Pixel {
             Self::Empty => write!(f, "."),
             Self::Galaxy => write!(f, "#"),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct Position {
+    row: i32,
+    col: i32,
+}
+
+impl Position {
+    fn distance_to(&self, other: &Self) -> i32 {
+        let row_diff = self.row - other.row;
+        let col_diff = self.col - other.col;
+
+        i32::abs(row_diff) + i32::abs(col_diff)
     }
 }
