@@ -25,10 +25,15 @@ fn main() -> eyre::Result<()> {
     for row in &mut rows {
         row.unfold();
 
-        tracing::debug!(%row, "unfolded");
+        tracing::debug!(%row, cells = ?row.cells.len(), "unfolded");
     }
 
-    let total_solutions: usize = rows.iter().map(|row| row.num_solutions()).sum();
+    let mut total_solutions = 0;
+    for (n, row) in rows.iter().enumerate() {
+        let solutions = row.num_solutions();
+        tracing::info!("row {n}: {solutions} solution(s)");
+        total_solutions += solutions;
+    }
     println!("{total_solutions}");
 
     Ok(())
