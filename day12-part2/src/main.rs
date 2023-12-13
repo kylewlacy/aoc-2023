@@ -1,3 +1,7 @@
+// Solved with reference to hints/other implementations. This solution was
+// inspired by this comment:
+// - https://www.reddit.com/r/adventofcode/comments/18ge41g/comment/kd0b23d/
+
 use std::{
     collections::HashMap,
     io::Read as _,
