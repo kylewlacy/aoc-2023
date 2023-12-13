@@ -1,4 +1,9 @@
-use std::{io::Read as _, str::FromStr};
+use std::{
+    collections::HashMap,
+    io::Read as _,
+    str::FromStr,
+    sync::{OnceLock, RwLock},
+};
 
 use eyre::OptionExt;
 use rayon::iter::{IndexedParallelIterator as _, IntoParallelIterator as _, ParallelIterator as _};
@@ -83,7 +88,37 @@ fn num_solutions(
     constraints: SmallVec<[u8; 128]>,
     contiguity: Contiguity,
 ) -> usize {
-    compute_num_solutions(&cells, &constraints, contiguity)
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct NumSolutionsCacheKey {
+        cells: SmallVec<[PartialCell; 128]>,
+        constraints: SmallVec<[u8; 128]>,
+        contiguity: Contiguity,
+    }
+
+    static NUM_SOLUTIONS_CACHE: OnceLock<RwLock<HashMap<NumSolutionsCacheKey, usize>>> =
+        OnceLock::new();
+
+    let key = NumSolutionsCacheKey {
+        cells,
+        constraints,
+        contiguity,
+    };
+
+    let num_solutions_cache = NUM_SOLUTIONS_CACHE.get_or_init(RwLock::default);
+
+    {
+        let num_solutions_cache = num_solutions_cache.read().unwrap();
+        if let Some(solutions) = num_solutions_cache.get(&key) {
+            return *solutions;
+        };
+    }
+
+    let solutions = compute_num_solutions(&key.cells, &key.constraints, key.contiguity);
+
+    let mut num_solutions_cache = num_solutions_cache.write().unwrap();
+    num_solutions_cache.insert(key, solutions);
+
+    solutions
 }
 
 fn compute_num_solutions(
