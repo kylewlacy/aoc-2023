@@ -34,7 +34,7 @@ fn main() -> eyre::Result<()> {
     }
 
     tracing::info!("starting");
-    let total_solutions: usize = rows
+    let total_solutions: u64 = rows
         .into_par_iter()
         .enumerate()
         .map(|(n, row)| {
@@ -87,7 +87,7 @@ fn num_solutions(
     cells: SmallVec<[PartialCell; 128]>,
     constraints: SmallVec<[u8; 128]>,
     contiguity: Contiguity,
-) -> usize {
+) -> u64 {
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct NumSolutionsCacheKey {
         cells: SmallVec<[PartialCell; 128]>,
@@ -95,7 +95,7 @@ fn num_solutions(
         contiguity: Contiguity,
     }
 
-    static NUM_SOLUTIONS_CACHE: OnceLock<RwLock<HashMap<NumSolutionsCacheKey, usize>>> =
+    static NUM_SOLUTIONS_CACHE: OnceLock<RwLock<HashMap<NumSolutionsCacheKey, u64>>> =
         OnceLock::new();
 
     let key = NumSolutionsCacheKey {
@@ -121,11 +121,7 @@ fn num_solutions(
     solutions
 }
 
-fn compute_num_solutions(
-    cells: &[PartialCell],
-    constraints: &[u8],
-    contiguity: Contiguity,
-) -> usize {
+fn compute_num_solutions(cells: &[PartialCell], constraints: &[u8], contiguity: Contiguity) -> u64 {
     if constraints.is_empty() {
         if cells.iter().all(|cell| *cell != PartialCell::Damaged) {
             return 1;
