@@ -1,11 +1,6 @@
 use std::{io::Read as _, str::FromStr};
 
-use bitvec::array::BitArray;
 use eyre::OptionExt;
-use itertools::Itertools as _;
-use rayon::iter::{
-    IndexedParallelIterator as _, IntoParallelRefIterator as _, ParallelIterator as _,
-};
 
 fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
@@ -14,7 +9,7 @@ fn main() -> eyre::Result<()> {
                 .with_default_directive(tracing::level_filters::LevelFilter::INFO.into())
                 .from_env_lossy(),
         )
-        .with_timer(tracing_subscriber::fmt::time::uptime())
+        .without_time()
         .init();
     color_eyre::install()?;
 
@@ -29,16 +24,14 @@ fn main() -> eyre::Result<()> {
 
     for row in &mut rows {
         row.unfold();
-
-        tracing::debug!(%row, cells = ?row.cells.len(), "unfolded");
     }
 
     tracing::info!("starting");
     let total_solutions: usize = rows
-        .par_iter()
+        .iter()
         .enumerate()
         .map(|(n, row)| {
-            let solutions = row.num_solutions();
+            let solutions = num_solutions(&row.cells, &row.constraints, Contiguity::Normal);
             tracing::info!("row {n}: {solutions} solution(s)");
             solutions
         })
@@ -52,7 +45,7 @@ fn main() -> eyre::Result<()> {
 #[derive(Debug, Clone)]
 struct Row {
     cells: Vec<PartialCell>,
-    constraints: Vec<u8>,
+    constraints: Vec<u32>,
 }
 
 impl Row {
@@ -72,97 +65,96 @@ impl Row {
         self.cells = new_cells;
         self.constraints = new_constraints;
     }
+}
 
-    fn state(&self) -> State {
-        if self.cells.iter().any(|cell| *cell == PartialCell::Unknown) {
-            State::Unsolved
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum Contiguity {
+    #[default]
+    Normal,
+    ContinuesGroup,
+    BreaksGroup,
+}
+
+fn num_solutions(cells: &[PartialCell], constraints: &[u32], contiguity: Contiguity) -> usize {
+    let num_solutions = compute_num_solutions(cells, constraints, contiguity);
+
+    num_solutions
+}
+
+fn compute_num_solutions(
+    cells: &[PartialCell],
+    constraints: &[u32],
+    contiguity: Contiguity,
+) -> usize {
+    if constraints.is_empty() {
+        if cells.iter().all(|cell| *cell != PartialCell::Damaged) {
+            return 1;
         } else {
-            let damaged_groups = self
-                .cells
-                .split(|cell| *cell == PartialCell::Operational)
-                .filter(|group| !group.is_empty())
-                .map(|group| -> u8 { group.len().try_into().unwrap() });
-            if damaged_groups.eq(self.constraints.iter().copied()) {
-                State::Solved
-            } else {
-                State::Invalid
-            }
+            return 0;
         }
     }
 
-    fn num_solutions(&self) -> usize {
-        let state = self.state();
-        match state {
-            State::Solved => {
-                return 1;
+    match cells {
+        &[] => 0,
+        &[PartialCell::Operational, ref rest @ ..] => match contiguity {
+            Contiguity::ContinuesGroup => 0,
+            Contiguity::Normal | Contiguity::BreaksGroup => {
+                num_solutions(rest, constraints, Contiguity::Normal)
             }
-            State::Invalid => {
-                return 0;
+        },
+        &[PartialCell::Damaged, ..] => {
+            match contiguity {
+                Contiguity::Normal | Contiguity::ContinuesGroup => {}
+                Contiguity::BreaksGroup => {
+                    return 0;
+                }
             }
-            State::Unsolved => {}
-        }
 
-        let unknown_positions =
-            self.cells
+            let Some((constraint, rest_constraints)) = constraints.split_first() else {
+                return 0;
+            };
+            let damaged_split_index = cells
                 .iter()
                 .enumerate()
-                .filter_map(|(n, cell)| -> Option<u8> {
-                    match cell {
-                        PartialCell::Unknown => Some(n.try_into().unwrap()),
-                        PartialCell::Operational | PartialCell::Damaged => None,
+                .find_map(|(n, cell)| {
+                    if *cell != PartialCell::Damaged {
+                        Some(n)
+                    } else {
+                        None
                     }
-                });
+                })
+                .unwrap_or_else(|| cells.len());
+            let (damaged, rest) = cells.split_at(damaged_split_index);
+            let num_damaged: u32 = damaged.len().try_into().unwrap();
 
-        let mut initial_candidate_row = CompleteRow::new();
-        for (n, cell) in self.cells.iter().enumerate() {
-            let initial_candidiate = match cell {
-                PartialCell::Operational | PartialCell::Unknown => CompleteCell::Operational,
-                PartialCell::Damaged => CompleteCell::Damaged,
-            };
-            initial_candidate_row.set(n.try_into().unwrap(), initial_candidiate);
-        }
-
-        unknown_positions
-            .powerset()
-            .filter(|flip_positions| {
-                let mut candidate_row = initial_candidate_row;
-
-                for position in flip_positions {
-                    candidate_row.set(*position, CompleteCell::Damaged);
+            match num_damaged.cmp(constraint) {
+                std::cmp::Ordering::Less => {
+                    let contiguous_constraints = [constraint - num_damaged]
+                        .into_iter()
+                        .chain(rest_constraints.iter().copied())
+                        .collect::<Vec<_>>();
+                    num_solutions(rest, &contiguous_constraints, Contiguity::ContinuesGroup)
                 }
-                candidate_row.matches_constraints(&self.constraints)
-            })
-            .count()
-    }
-}
-
-impl std::fmt::Display for Row {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for cell in &self.cells {
-            write!(f, "{cell}")?;
-        }
-
-        if !self.constraints.is_empty() && !self.cells.is_empty() {
-            write!(f, " ")?;
-        }
-
-        for (n, constraint) in self.constraints.iter().enumerate() {
-            if n != 0 {
-                write!(f, ",")?;
+                std::cmp::Ordering::Equal => {
+                    num_solutions(rest, rest_constraints, Contiguity::BreaksGroup)
+                }
+                std::cmp::Ordering::Greater => 0,
             }
-
-            write!(f, "{constraint}")?;
         }
-
-        Ok(())
+        &[PartialCell::Unknown, ref rest @ ..] => {
+            let a = vec![PartialCell::Damaged]
+                .into_iter()
+                .chain(rest.iter().copied())
+                .collect::<Vec<_>>();
+            let a_solutions = num_solutions(&a, constraints, contiguity);
+            let b = [PartialCell::Operational]
+                .into_iter()
+                .chain(rest.iter().copied())
+                .collect::<Vec<_>>();
+            let b_solutions = num_solutions(&b, constraints, contiguity);
+            a_solutions + b_solutions
+        }
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum State {
-    Solved,
-    Unsolved,
-    Invalid,
 }
 
 impl FromStr for Row {
@@ -208,42 +200,28 @@ impl TryFrom<char> for PartialCell {
 impl std::fmt::Display for PartialCell {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PartialCell::Operational => write!(f, "."),
-            PartialCell::Damaged => write!(f, "#"),
-            PartialCell::Unknown => write!(f, "?"),
+            Self::Operational => write!(f, "."),
+            Self::Damaged => write!(f, "#"),
+            Self::Unknown => write!(f, "?"),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct CompleteRow(BitArray<[u64; 2]>);
+struct DisplayCells<'a>(&'a [PartialCell]);
 
-impl CompleteRow {
-    fn new() -> Self {
-        Self(BitArray::new([0; 2]))
+impl std::fmt::Display for DisplayCells<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut string = String::new();
+        for cell in self.0 {
+            match cell {
+                PartialCell::Operational => string.push('.'),
+                PartialCell::Damaged => string.push('#'),
+                PartialCell::Unknown => string.push('?'),
+            }
+        }
+
+        f.pad(&string)?;
+
+        Ok(())
     }
-
-    fn matches_constraints(&self, constraints: &[u8]) -> bool {
-        let groups = self
-            .0
-            .split(|_, bit| !bit)
-            .filter(|group| !group.is_empty())
-            .map(|group| group.len() as u8);
-        groups.eq(constraints.iter().copied())
-    }
-
-    fn set(&mut self, index: u8, value: CompleteCell) {
-        let bit = match value {
-            CompleteCell::Operational => false,
-            CompleteCell::Damaged => true,
-        };
-        self.0.set(index as usize, bit);
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-enum CompleteCell {
-    Operational = 0,
-    Damaged = 1,
 }
