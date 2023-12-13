@@ -1,6 +1,8 @@
 use std::{io::Read as _, str::FromStr};
 
 use eyre::OptionExt;
+use rayon::iter::{IndexedParallelIterator as _, IntoParallelIterator as _, ParallelIterator as _};
+use smallvec::SmallVec;
 
 fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
@@ -9,7 +11,7 @@ fn main() -> eyre::Result<()> {
                 .with_default_directive(tracing::level_filters::LevelFilter::INFO.into())
                 .from_env_lossy(),
         )
-        .without_time()
+        .with_timer(tracing_subscriber::fmt::time::uptime())
         .init();
     color_eyre::install()?;
 
@@ -28,10 +30,11 @@ fn main() -> eyre::Result<()> {
 
     tracing::info!("starting");
     let total_solutions: usize = rows
-        .iter()
+        .into_par_iter()
         .enumerate()
         .map(|(n, row)| {
-            let solutions = num_solutions(&row.cells, &row.constraints, Contiguity::Normal);
+            let solutions =
+                num_solutions(row.cells.into(), row.constraints.into(), Contiguity::Normal);
             tracing::info!("row {n}: {solutions} solution(s)");
             solutions
         })
@@ -45,7 +48,7 @@ fn main() -> eyre::Result<()> {
 #[derive(Debug, Clone)]
 struct Row {
     cells: Vec<PartialCell>,
-    constraints: Vec<u32>,
+    constraints: Vec<u8>,
 }
 
 impl Row {
@@ -67,7 +70,7 @@ impl Row {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 enum Contiguity {
     #[default]
     Normal,
@@ -75,15 +78,17 @@ enum Contiguity {
     BreaksGroup,
 }
 
-fn num_solutions(cells: &[PartialCell], constraints: &[u32], contiguity: Contiguity) -> usize {
-    let num_solutions = compute_num_solutions(cells, constraints, contiguity);
-
-    num_solutions
+fn num_solutions(
+    cells: SmallVec<[PartialCell; 128]>,
+    constraints: SmallVec<[u8; 128]>,
+    contiguity: Contiguity,
+) -> usize {
+    compute_num_solutions(&cells, &constraints, contiguity)
 }
 
 fn compute_num_solutions(
     cells: &[PartialCell],
-    constraints: &[u32],
+    constraints: &[u8],
     contiguity: Contiguity,
 ) -> usize {
     if constraints.is_empty() {
@@ -99,7 +104,7 @@ fn compute_num_solutions(
         &[PartialCell::Operational, ref rest @ ..] => match contiguity {
             Contiguity::ContinuesGroup => 0,
             Contiguity::Normal | Contiguity::BreaksGroup => {
-                num_solutions(rest, constraints, Contiguity::Normal)
+                num_solutions(rest.into(), constraints.into(), Contiguity::Normal)
             }
         },
         &[PartialCell::Damaged, ..] => {
@@ -125,19 +130,25 @@ fn compute_num_solutions(
                 })
                 .unwrap_or_else(|| cells.len());
             let (damaged, rest) = cells.split_at(damaged_split_index);
-            let num_damaged: u32 = damaged.len().try_into().unwrap();
+            let num_damaged: u8 = damaged.len().try_into().unwrap();
 
             match num_damaged.cmp(constraint) {
                 std::cmp::Ordering::Less => {
                     let contiguous_constraints = [constraint - num_damaged]
                         .into_iter()
                         .chain(rest_constraints.iter().copied())
-                        .collect::<Vec<_>>();
-                    num_solutions(rest, &contiguous_constraints, Contiguity::ContinuesGroup)
+                        .collect();
+                    num_solutions(
+                        rest.into(),
+                        contiguous_constraints,
+                        Contiguity::ContinuesGroup,
+                    )
                 }
-                std::cmp::Ordering::Equal => {
-                    num_solutions(rest, rest_constraints, Contiguity::BreaksGroup)
-                }
+                std::cmp::Ordering::Equal => num_solutions(
+                    rest.into(),
+                    rest_constraints.into(),
+                    Contiguity::BreaksGroup,
+                ),
                 std::cmp::Ordering::Greater => 0,
             }
         }
@@ -145,13 +156,13 @@ fn compute_num_solutions(
             let a = vec![PartialCell::Damaged]
                 .into_iter()
                 .chain(rest.iter().copied())
-                .collect::<Vec<_>>();
-            let a_solutions = num_solutions(&a, constraints, contiguity);
+                .collect();
+            let a_solutions = num_solutions(a, constraints.into(), contiguity);
             let b = [PartialCell::Operational]
                 .into_iter()
                 .chain(rest.iter().copied())
-                .collect::<Vec<_>>();
-            let b_solutions = num_solutions(&b, constraints, contiguity);
+                .collect();
+            let b_solutions = num_solutions(b, constraints.into(), contiguity);
             a_solutions + b_solutions
         }
     }
@@ -175,7 +186,7 @@ impl FromStr for Row {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum PartialCell {
     Operational,
     Damaged,

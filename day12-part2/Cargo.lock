@@ -143,6 +143,7 @@ dependencies = [
  "eyre",
  "itertools",
  "rayon",
+ "smallvec",
  "tracing",
  "tracing-subscriber",
 ]
