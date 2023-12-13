@@ -39,7 +39,7 @@ fn main() -> eyre::Result<()> {
         .map(|(n, row)| {
             let solutions =
                 num_solutions(row.cells.into(), row.constraints.into(), Contiguity::Normal);
-            tracing::info!("row {n}: {solutions} solution(s)");
+            tracing::debug!("row {n}: {solutions} solution(s)");
             solutions
         })
         .sum();
