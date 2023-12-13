@@ -5,6 +5,9 @@ edition = "2021"
 
 [dependencies]
 color-eyre = "0.6.2"
-eyre = "0.6.10"
+eyre = { git = "https://github.com/eyre-rs/eyre.git", rev = "d5cad7c2a16eb1b1b1ceece204227754b7b14e8c" }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+
+[patch.crates-io]
+eyre = { git = "https://github.com/eyre-rs/eyre.git", rev = "d5cad7c2a16eb1b1b1ceece204227754b7b14e8c" }
