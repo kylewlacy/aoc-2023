@@ -6,7 +6,6 @@ use std::{
 };
 
 use eyre::OptionExt;
-use rayon::iter::{IndexedParallelIterator as _, IntoParallelIterator as _, ParallelIterator as _};
 use smallvec::SmallVec;
 
 fn main() -> eyre::Result<()> {
@@ -35,7 +34,7 @@ fn main() -> eyre::Result<()> {
 
     tracing::info!("starting");
     let total_solutions: u64 = rows
-        .into_par_iter()
+        .into_iter()
         .enumerate()
         .map(|(n, row)| {
             let solutions =
