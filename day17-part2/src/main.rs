@@ -172,7 +172,7 @@ impl Crucible {
                 return false;
             }
 
-            let last_n_movements = self
+            let straight_line_distance = self
                 .direction_history
                 .iter()
                 .rev()
@@ -180,12 +180,12 @@ impl Crucible {
                 .count();
 
             // Cancel if we've been travelling in a straight line too long
-            if *last_movement == direction && last_n_movements >= 10 {
+            if *last_movement == direction && straight_line_distance >= 10 {
                 return false;
             }
 
             // Cancel if we just turned and are trying to turn again
-            if *last_movement != direction && last_n_movements < 4 {
+            if *last_movement != direction && straight_line_distance < 4 {
                 return false;
             }
         }
@@ -209,6 +209,21 @@ impl Crucible {
     }
 
     fn is_finished(&self, grid: &Grid) -> bool {
+        if let Some(last_direction) = self.direction_history.last() {
+            let straight_line_distance = self
+                .direction_history
+                .iter()
+                .rev()
+                .take_while(|dir| *dir == last_direction)
+                .count();
+
+            // Can't stop unless we've been travelling in the same line for at
+            // least 4 tiles
+            if straight_line_distance < 4 {
+                return false;
+            }
+        }
+
         self.position == grid.end()
     }
 }
