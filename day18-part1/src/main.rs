@@ -1,4 +1,4 @@
-use std::io::Read as _;
+use std::{collections::HashSet, io::Read as _};
 
 use eyre::OptionExt;
 
@@ -97,29 +97,47 @@ fn dig_out_interior(grid: &mut Grid) {
 }
 
 fn flood_fill(pos: (isize, isize), should_dig: &mut [Vec<bool>]) {
+    let mut unvisited = vec![pos];
+    let mut visited = HashSet::new();
+
+    while let Some(pos) = unvisited.pop() {
+        if flood_fill_one(pos, should_dig) {
+            let neighbors = [
+                (pos.0 + 1, pos.1),
+                (pos.0 - 1, pos.1),
+                (pos.0, pos.1 + 1),
+                (pos.0, pos.1 - 1),
+            ];
+            for neighbor in neighbors {
+                if visited.insert(neighbor) {
+                    unvisited.push(neighbor);
+                }
+            }
+        }
+    }
+}
+
+fn flood_fill_one(pos: (isize, isize), should_dig: &mut [Vec<bool>]) -> bool {
     let num_rows = should_dig.len();
     let num_cols = should_dig.get(0).map(|row| row.len()).unwrap_or(0);
 
     let Ok(i) = pos.0.try_into() else {
-        return;
+        return false;
     };
     let Ok(j) = pos.1.try_into() else {
-        return;
+        return false;
     };
     let (i, j): (usize, usize) = (i, j);
     if i >= num_rows || j >= num_cols {
-        return;
+        return false;
     }
 
     if !should_dig[i][j] {
-        return;
+        return false;
     }
     should_dig[i][j] = false;
 
-    flood_fill((pos.0 + 1, pos.1), should_dig);
-    // flood_fill((pos.0 - 1, pos.1), should_dig);
-    flood_fill((pos.0, pos.1 + 1), should_dig);
-    flood_fill((pos.0, pos.1 - 1), should_dig);
+    true
 }
 
 struct Grid {
