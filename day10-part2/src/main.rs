@@ -1,10 +1,9 @@
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
+    collections::{HashSet, VecDeque},
     io::Read as _,
 };
 
 use eyre::OptionExt as _;
-use itertools::Itertools as _;
 use pathfinding::directed::dijkstra::dijkstra;
 
 fn main() -> eyre::Result<()> {

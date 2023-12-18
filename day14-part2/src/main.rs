@@ -18,7 +18,6 @@ fn main() -> eyre::Result<()> {
     stdin.read_to_string(&mut input)?;
 
     let mut platform: Platform = input.parse()?;
-    let mut cycles_remaining = CYCLES;
 
     let mut initial_platform_states = HashSet::new();
     loop {
@@ -28,7 +27,6 @@ fn main() -> eyre::Result<()> {
         }
 
         platform.roll_cycle();
-        cycles_remaining -= 1;
     }
 
     let mut cycle_platform_states = HashSet::new();
@@ -42,7 +40,6 @@ fn main() -> eyre::Result<()> {
         cycle_loads.push(platform.total_load());
 
         platform.roll_cycle();
-        cycles_remaining -= 1;
     }
 
     let index_after_all_cycles = (CYCLES - initial_platform_states.len()) % cycle_loads.len();

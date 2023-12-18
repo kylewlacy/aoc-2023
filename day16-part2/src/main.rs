@@ -15,7 +15,7 @@ fn main() -> eyre::Result<()> {
     let mut input = String::new();
     stdin.read_to_string(&mut input)?;
 
-    let mut grid = Grid::parse_new(&input)?;
+    let grid = Grid::parse_new(&input)?;
     let num_rows = grid.num_rows();
     let num_cols = grid.num_cols();
     let top_edge_starts = (0..num_cols).map(|col| (Position { row: 0, col }, Direction::Down));
