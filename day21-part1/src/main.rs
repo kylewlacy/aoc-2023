@@ -1,4 +1,6 @@
-use std::{collections::HashSet, io::Read as _};
+// Thanks to my wife for a hint on solving this one!
+
+use std::{collections::HashMap, io::Read as _};
 
 use eyre::OptionExt;
 
@@ -33,8 +35,39 @@ fn main() -> eyre::Result<()> {
         .ok_or_eyre("starting position not found")?;
     let grid = Grid::new(&map_rows);
 
-    let mut reachable_cells = HashSet::new();
-    grid.reachable_cells(start_pos, 64, &mut reachable_cells);
+    let mut reachable_cells = HashMap::new();
+    let mut debug_grid: Vec<Vec<_>> = map_rows
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|cell| match cell {
+                    MapCell::GardenPlot => ' ',
+                    MapCell::Rock => '#',
+                    MapCell::Start => 'S',
+                })
+                .collect()
+        })
+        .collect();
+    find_reachable_cells(
+        &grid,
+        start_pos,
+        0,
+        64,
+        &mut reachable_cells,
+        &mut debug_grid,
+    );
+    debug_grid[start_pos.row][start_pos.col] = 'S';
+
+    // Uncomment to print debug grid:
+    // println!(
+    //     "{}",
+    //     debug_grid
+    //         .into_iter()
+    //         .map(|s| s.into_iter().collect::<String>())
+    //         .collect::<Vec<_>>()
+    //         .join("\n")
+    // );
+
     println!("{}", reachable_cells.len());
 
     Ok(())
@@ -100,31 +133,57 @@ impl Grid {
         let cell = row.get(position.col)?;
         Some(*cell)
     }
+}
 
-    fn reachable_cells(
-        &self,
-        position: Position,
-        distance: u64,
-        positions: &mut HashSet<Position>,
-    ) {
-        match self.get(position) {
-            Some(Cell::Rock) | None => {
-                return;
-            }
-            Some(Cell::GardenPlot) => {}
-        }
+fn find_reachable_cells(
+    grid: &Grid,
+    position: Position,
+    current_distance: u64,
+    max_distance: u64,
+    reachable: &mut HashMap<Position, u64>,
+    debug_grid: &mut [Vec<char>],
+) {
+    let already_reached = reachable
+        .get(&position)
+        .is_some_and(|d| *d <= current_distance);
+    if already_reached {
+        tracing::debug!(%position, current_distance, max_distance, "already reachable");
+        return;
+    }
 
-        if distance == 0 {
-            positions.insert(position);
+    match grid.get(position) {
+        Some(Cell::Rock) | None => {
+            tracing::debug!(%position, current_distance, max_distance, "obstacle");
             return;
         }
+        Some(Cell::GardenPlot) => {}
+    }
 
-        let next_positions = Direction::DIRECTIONS
-            .iter()
-            .filter_map(|direction| self.offset(position, *direction));
-        for next_pos in next_positions {
-            self.reachable_cells(next_pos, distance - 1, positions);
-        }
+    if current_distance == max_distance || current_distance % 2 == 0 {
+        tracing::debug!(%position, current_distance, max_distance, "reached");
+        reachable
+            .entry(position)
+            .and_modify(|e| *e = std::cmp::min(*e, current_distance))
+            .or_insert(current_distance);
+        debug_grid[position.row][position.col] = '_';
+    }
+
+    if current_distance == max_distance {
+        return;
+    }
+
+    let next_positions = Direction::DIRECTIONS
+        .iter()
+        .filter_map(|direction| grid.offset(position, *direction));
+    for next_pos in next_positions {
+        find_reachable_cells(
+            grid,
+            next_pos,
+            current_distance + 1,
+            max_distance,
+            reachable,
+            debug_grid,
+        );
     }
 }
 
@@ -154,6 +213,12 @@ impl TryFrom<char> for MapCell {
 struct Position {
     row: usize,
     col: usize,
+}
+
+impl std::fmt::Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.row, self.col)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
