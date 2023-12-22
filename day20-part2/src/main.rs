@@ -21,6 +21,7 @@ fn main() -> eyre::Result<()> {
     stdin.read_to_string(&mut input)?;
 
     let mut modules: Modules = input.parse()?;
+
     let mut presses = 0;
     tracing::info!("starting");
     loop {
@@ -62,77 +63,66 @@ impl std::fmt::Display for SentPulse {
     }
 }
 
-trait Module {
-    fn handle(&mut self, sent: &SentPulse) -> Option<Pulse>;
+#[derive(Debug, Clone, Copy)]
+enum ModuleType {
+    Broadcast,
+    FlipFlop,
+    Conjunction,
+    Untyped,
 }
 
-struct UntypedModule;
+enum Module {
+    Untyped,
+    FlipFlop { on: bool },
+    Conjunction { pulses: HashMap<String, Pulse> },
+    Broadcast,
+}
 
-impl Module for UntypedModule {
-    fn handle(&mut self, _sent: &SentPulse) -> Option<Pulse> {
-        None
+impl Module {
+    fn new<'a>(ty: ModuleType, sources: impl Iterator<Item = &'a str>) -> Self {
+        match ty {
+            ModuleType::Broadcast => Self::Broadcast,
+            ModuleType::FlipFlop => Self::FlipFlop { on: false },
+            ModuleType::Conjunction => Self::Conjunction {
+                pulses: sources
+                    .map(|source| (source.to_string(), Pulse::Low))
+                    .collect(),
+            },
+            ModuleType::Untyped => Self::Untyped,
+        }
     }
-}
 
-#[derive(Default)]
-struct FlipFlopModule {
-    on: bool,
-}
-
-impl Module for FlipFlopModule {
     fn handle(&mut self, sent: &SentPulse) -> Option<Pulse> {
-        match sent.pulse {
-            Pulse::High => None,
-            Pulse::Low => {
-                if self.on {
-                    self.on = false;
+        match self {
+            Module::Untyped => None,
+            Module::FlipFlop { on } => match sent.pulse {
+                Pulse::High => None,
+                Pulse::Low => {
+                    if *on {
+                        *on = false;
+                        Some(Pulse::Low)
+                    } else {
+                        *on = true;
+                        Some(Pulse::High)
+                    }
+                }
+            },
+            Module::Conjunction { pulses } => {
+                pulses.insert(sent.source.clone(), sent.pulse);
+
+                if pulses.values().all(|pulse| *pulse == Pulse::High) {
                     Some(Pulse::Low)
                 } else {
-                    self.on = true;
                     Some(Pulse::High)
                 }
             }
+            Module::Broadcast => Some(sent.pulse),
         }
-    }
-}
-
-#[derive(Default)]
-struct ConjunctionModule {
-    pulses: HashMap<String, Pulse>,
-}
-
-impl ConjunctionModule {
-    fn new<'a>(sources: impl Iterator<Item = &'a str>) -> Self {
-        Self {
-            pulses: sources
-                .map(|source| (source.to_string(), Pulse::Low))
-                .collect(),
-        }
-    }
-}
-
-impl Module for ConjunctionModule {
-    fn handle(&mut self, sent: &SentPulse) -> Option<Pulse> {
-        self.pulses.insert(sent.source.clone(), sent.pulse);
-
-        if self.pulses.values().all(|pulse| *pulse == Pulse::High) {
-            Some(Pulse::Low)
-        } else {
-            Some(Pulse::High)
-        }
-    }
-}
-
-struct BroadcastModule;
-
-impl Module for BroadcastModule {
-    fn handle(&mut self, sent: &SentPulse) -> Option<Pulse> {
-        Some(sent.pulse)
     }
 }
 
 struct Modules {
-    modules: HashMap<String, Box<dyn Module>>,
+    modules: HashMap<String, Module>,
     destinations: HashMap<String, Vec<String>>,
 }
 
@@ -226,7 +216,7 @@ impl std::str::FromStr for Modules {
             .into_iter()
             .map(|(name, ty)| {
                 let module_sources = &sources[&name];
-                (name, ty.build(module_sources.iter().map(|s| &**s)))
+                (name, Module::new(ty, module_sources.iter().map(|s| &**s)))
             })
             .collect();
 
@@ -234,24 +224,5 @@ impl std::str::FromStr for Modules {
             modules,
             destinations,
         })
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ModuleType {
-    Broadcast,
-    FlipFlop,
-    Conjunction,
-    Untyped,
-}
-
-impl ModuleType {
-    fn build<'a>(&self, sources: impl Iterator<Item = &'a str>) -> Box<dyn Module> {
-        match self {
-            ModuleType::Broadcast => Box::new(BroadcastModule),
-            ModuleType::FlipFlop => Box::new(FlipFlopModule::default()),
-            ModuleType::Conjunction => Box::new(ConjunctionModule::new(sources)),
-            ModuleType::Untyped => Box::new(UntypedModule),
-        }
     }
 }
