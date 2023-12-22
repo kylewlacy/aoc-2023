@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     io::Read as _,
 };
 
@@ -177,12 +177,16 @@ impl Space {
     }
 
     fn settle_tick(&mut self) -> bool {
-        for (brick_id, brick) in self.bricks.iter_mut().enumerate() {
+        for (brick_index, brick) in self.bricks.iter_mut().enumerate() {
+            let brick_id = BrickId(brick_index);
             let can_fall = brick.positions().all(|pos| {
-                if let Some(below) = pos.below() {
-                    !self.spaces.contains_key(&below)
-                } else {
-                    false
+                let Some(below) = pos.below() else {
+                    return false;
+                };
+                match self.spaces.get(&below) {
+                    Some(this) if *this == brick_id => true,
+                    None => true,
+                    Some(_other) => false,
                 }
             });
             if can_fall {
@@ -191,7 +195,7 @@ impl Space {
                 }
                 brick.fall();
                 for pos in brick.positions() {
-                    self.spaces.insert(pos, BrickId(brick_id));
+                    self.spaces.insert(pos, brick_id);
                 }
 
                 return true;
@@ -206,31 +210,84 @@ impl Space {
     }
 
     fn num_disintegratable(&self) -> usize {
-        let mut dependents: BTreeMap<BrickId, HashSet<BrickId>> = BTreeMap::new();
+        let mut depends_on: BTreeMap<BrickId, BTreeSet<BrickId>> = BTreeMap::new();
+        let mut depended_by: BTreeMap<BrickId, BTreeSet<BrickId>> = BTreeMap::new();
 
-        for (brick_id, brick) in self.bricks.iter().enumerate() {
+        for (brick_index, brick) in self.bricks.iter().enumerate() {
+            let brick_id = BrickId(brick_index);
+            depended_by.entry(brick_id).or_default();
+            depends_on.entry(brick_id).or_default();
             for pos in brick.positions() {
                 if let Some(dependent_id) = self.spaces.get(&pos.above()) {
-                    dependents
-                        .entry(*dependent_id)
-                        .or_default()
-                        .insert(BrickId(brick_id));
+                    if *dependent_id != brick_id {
+                        depends_on
+                            .entry(*dependent_id)
+                            .or_default()
+                            .insert(brick_id);
+                        depended_by
+                            .entry(brick_id)
+                            .or_default()
+                            .insert(*dependent_id);
+                    }
                 }
             }
         }
 
-        let non_disintegratable = dependents
-            .iter()
-            .filter_map(|(_, dependencies)| {
-                if dependencies.len() == 1 {
-                    dependencies.iter().next().copied()
-                } else {
-                    None
-                }
-            })
-            .collect::<BTreeSet<_>>();
+        tracing::debug!("depends on:");
+        for (id, deps) in &depends_on {
+            tracing::debug!(
+                "{} -> {}",
+                id.0,
+                deps.iter()
+                    .map(|d| d.0.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        tracing::debug!("");
+        tracing::debug!("depended by:");
+        for (id, deps) in &depended_by {
+            tracing::debug!(
+                "{} -> {}",
+                id.0,
+                deps.iter()
+                    .map(|d| d.0.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
 
-        self.bricks.len() - non_disintegratable.len()
+        let mut num_disintegratable = 0;
+        for brick_index in 0..self.bricks.len() {
+            let brick_id = BrickId(brick_index);
+
+            let required_by: BTreeSet<_> = depended_by[&brick_id]
+                .iter()
+                .filter(|dependent_id| {
+                    tracing::debug!(
+                        "{dependent_id:?} for {brick_id:?} has deps: {}",
+                        depends_on[dependent_id].len()
+                    );
+                    depends_on[dependent_id].len() == 1
+                })
+                .collect();
+
+            if required_by.len() > 0 {
+                tracing::debug!(
+                    "{brick_id:?} is required by {}",
+                    required_by
+                        .iter()
+                        .map(|b| format!("{b:?}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            } else {
+                tracing::debug!("{brick_id:?} is not required");
+                num_disintegratable += 1;
+            }
+        }
+
+        num_disintegratable
     }
 }
 
